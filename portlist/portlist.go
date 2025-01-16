@@ -38,6 +38,7 @@ func main() {
 		if port.IsUSB {
 			fmt.Printf("   USB ID      : %s:%s\n", port.VID, port.PID)
 			fmt.Printf("   USB serial  : %s\n", port.SerialNumber)
+			fmt.Printf("   USB location: %s\n", port.Location)
 		}
 	}
 }

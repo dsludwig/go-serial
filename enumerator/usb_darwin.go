@@ -70,6 +70,7 @@ func extractPortInfo(service io_registry_entry_t) (*PortDetails, error) {
 		vid, _ := usbDevice.GetIntProperty("idVendor", C.kCFNumberSInt16Type)
 		pid, _ := usbDevice.GetIntProperty("idProduct", C.kCFNumberSInt16Type)
 		serialNumber, _ := usbDevice.GetStringProperty("USB Serial Number")
+		location, _ := usbDevice.GetLocation("IOService")
 		//product, _ := usbDevice.GetStringProperty("USB Product Name")
 		//manufacturer, _ := usbDevice.GetStringProperty("USB Vendor Name")
 		//fmt.Println(product + " - " + manufacturer)
@@ -78,6 +79,7 @@ func extractPortInfo(service io_registry_entry_t) (*PortDetails, error) {
 		port.VID = fmt.Sprintf("%04X", vid)
 		port.PID = fmt.Sprintf("%04X", pid)
 		port.SerialNumber = serialNumber
+		port.Location = location
 	}
 	return port, nil
 }
@@ -208,6 +210,19 @@ func (me *io_registry_entry_t) GetIntProperty(key string, intType C.CFNumberType
 		return res, fmt.Errorf("Property '%s' can't be converted or has been truncated", key)
 	}
 	return res, nil
+}
+
+func (me *io_registry_entry_t) GetLocation(plane string) (string, error) {
+	location := make([]C.char, 128)
+
+	cPlane := C.CString(plane)
+	defer C.free(unsafe.Pointer(cPlane))
+
+	err := C.IORegistryEntryGetLocationInPlane(C.io_registry_entry_t(*me), cPlane, &location[0])
+	if err != 0 {
+		return "", fmt.Errorf("could not get location in plane %s: %v", plane, err)
+	}
+	return C.GoString(&location[0]), nil
 }
 
 func (me *io_registry_entry_t) Release() {

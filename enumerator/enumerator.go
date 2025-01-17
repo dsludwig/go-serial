@@ -19,6 +19,9 @@ type PortDetails struct {
 
 	// Manufacturer string
 
+	// USB device tree location
+	Location string
+
 	// Product is an OS-dependent string that describes the serial port, it may
 	// be not always available and it may be different across OS.
 	Product string

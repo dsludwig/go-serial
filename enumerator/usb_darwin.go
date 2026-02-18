@@ -71,7 +71,7 @@ func extractPortInfo(service io_registry_entry_t) (*PortDetails, error) {
 		pid, _ := usbDevice.GetIntProperty("idProduct", C.kCFNumberSInt16Type)
 		serialNumber, _ := usbDevice.GetStringProperty("USB Serial Number")
 		location, _ := usbDevice.GetLocation("IOService")
-		//product, _ := usbDevice.GetStringProperty("USB Product Name")
+		product, _ := usbDevice.GetStringProperty("USB Product Name")
 		//manufacturer, _ := usbDevice.GetStringProperty("USB Vendor Name")
 		//fmt.Println(product + " - " + manufacturer)
 
@@ -80,6 +80,7 @@ func extractPortInfo(service io_registry_entry_t) (*PortDetails, error) {
 		port.PID = fmt.Sprintf("%04X", pid)
 		port.SerialNumber = serialNumber
 		port.Location = location
+		port.Product = product
 	}
 	return port, nil
 }

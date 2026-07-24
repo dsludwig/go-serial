@@ -21,8 +21,11 @@ type PortDetails struct {
 	PID string
 	// SerialNumber is the USB serial number, when available.
 	SerialNumber string
-	// Location is the USB device tree location, when available. Currently
-	// only populated on macOS.
+	// Location is the USB device tree location, when available. The format
+	// is OS-dependent (IORegistry location on macOS, device location path
+	// like "PCIROOT(0)#PCI(0x14,0)#USBROOT(0)#USB(2)" on Windows) but stable
+	// for a given physical port, and shared by all serial ports of a
+	// multi-port adapter. Currently populated on macOS and Windows.
 	Location string
 	// Configuration is the USB configuration string, when available.
 	// Requires active USB probing enabled.
@@ -33,6 +36,13 @@ type PortDetails struct {
 	// Product is the USB iProduct string, when available.
 	// Requires active USB probing enabled.
 	Product string
+	// UsbChannel identifies which channel/interface of a multi-port USB
+	// adapter the port belongs to, when the OS exposes it: the channel
+	// letter ("A"/"B") of a multi-channel FTDI adapter, or the composite
+	// interface number ("00", "02", ...) of a multi-function USB device.
+	// Empty when unknown or not applicable. Currently only populated on
+	// Windows.
+	UsbChannel string
 }
 
 // All is a vid/pid filter that accepts all devices

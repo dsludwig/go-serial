@@ -60,12 +60,13 @@ func TestParseDeviceID(t *testing.T) {
 
 func TestApplyUsbAncestorInfo(t *testing.T) {
 	tests := []struct {
-		name       string
-		deviceID   string
-		ancestorID string
-		done       bool
-		serialNo   string
-		channel    string
+		name        string
+		deviceID    string
+		ancestorID  string
+		sameDevice  bool
+		serialFound bool
+		serialNo    string
+		channel     string
 	}{
 		{
 			// The immediate parent of an FTDIBUS child is the composite USB
@@ -73,19 +74,19 @@ func TestApplyUsbAncestorInfo(t *testing.T) {
 			name:       "FT2232 channel A parent interface",
 			deviceID:   "FTDIBUS\\VID_0403+PID_6010+FT891Q3A\\0000",
 			ancestorID: "USB\\VID_0403&PID_6010&MI_00\\6&3B199AA1&0&0000",
-			done:       false, serialNo: "FT891Q3A", channel: "",
+			sameDevice: true, serialFound: false, serialNo: "FT891Q3A", channel: "",
 		},
 		{
 			name:       "FT2232 channel A root device",
 			deviceID:   "FTDIBUS\\VID_0403+PID_6010+FT891Q3A\\0000",
 			ancestorID: "USB\\VID_0403&PID_6010\\FT891Q3",
-			done:       true, serialNo: "FT891Q3", channel: "A",
+			sameDevice: true, serialFound: true, serialNo: "FT891Q3", channel: "A",
 		},
 		{
 			name:       "FT2232 channel B root device",
 			deviceID:   "FTDIBUS\\VID_0403+PID_6010+FT891Q3B\\0000",
 			ancestorID: "USB\\VID_0403&PID_6010\\FT891Q3",
-			done:       true, serialNo: "FT891Q3", channel: "B",
+			sameDevice: true, serialFound: true, serialNo: "FT891Q3", channel: "B",
 		},
 		{
 			// EEPROM without a serial number: the root instance id is
@@ -94,13 +95,13 @@ func TestApplyUsbAncestorInfo(t *testing.T) {
 			name:       "FT2232 without EEPROM serial",
 			deviceID:   "FTDIBUS\\VID_0403+PID_6010+6&3B199AA1&0&1A\\0000",
 			ancestorID: "USB\\VID_0403&PID_6010\\6&3B199AA1&0",
-			done:       false, serialNo: "6", channel: "",
+			sameDevice: true, serialFound: false, serialNo: "6", channel: "",
 		},
 		{
 			name:       "composite CDC root device",
 			deviceID:   "USB\\VID_2341&PID_804E&MI_00\\6&279A3900&0&0000",
 			ancestorID: "USB\\VID_2341&PID_804E\\95530343834351B0E1E1",
-			done:       true, serialNo: "95530343834351B0E1E1", channel: "00",
+			sameDevice: true, serialFound: true, serialNo: "95530343834351B0E1E1", channel: "00",
 		},
 		{
 			// A hub or controller above the device: different VID/PID stops
@@ -108,16 +109,19 @@ func TestApplyUsbAncestorInfo(t *testing.T) {
 			name:       "unrelated ancestor",
 			deviceID:   "USB\\VID_2341&PID_804E&MI_00\\6&279A3900&0&0000",
 			ancestorID: "USB\\VID_8086&PID_7AE0\\5&38E85D5&0&8",
-			done:       true, serialNo: "", channel: "00",
+			sameDevice: false, serialFound: false, serialNo: "", channel: "00",
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			details := parseAndReturnDeviceID(tt.deviceID)
 			isFTDI := len(tt.deviceID) >= 7 && tt.deviceID[:7] == "FTDIBUS"
-			done := applyUsbAncestorInfo(details, tt.ancestorID, details.SerialNumber, isFTDI)
-			if done != tt.done {
-				t.Errorf("done: got %v, expected %v", done, tt.done)
+			sameDevice, serialFound := applyUsbAncestorInfo(details, tt.ancestorID, details.SerialNumber, isFTDI)
+			if sameDevice != tt.sameDevice {
+				t.Errorf("sameDevice: got %v, expected %v", sameDevice, tt.sameDevice)
+			}
+			if serialFound != tt.serialFound {
+				t.Errorf("serialFound: got %v, expected %v", serialFound, tt.serialFound)
 			}
 			if details.SerialNumber != tt.serialNo {
 				t.Errorf("SerialNumber: got %q, expected %q", details.SerialNumber, tt.serialNo)

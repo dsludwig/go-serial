@@ -62,19 +62,21 @@ func parseDeviceID(deviceID string, details *PortDetails) {
 // (FTDIBUS\VID_0403+PID_6010+<SERIAL>A\0000 for channel A of an FT2232) —
 // and synthesizes an id from the bus location when the EEPROM holds no
 // serial at all. The suffix left after removing the ancestor's serial from
-// childSerial identifies the channel. It reports whether the search up the
-// device tree is complete.
-func applyUsbAncestorInfo(details *PortDetails, ancestorID string, childSerial string, isFTDI bool) bool {
+// childSerial identifies the channel.
+//
+// sameDevice reports whether the ancestor still belongs to the same physical
+// USB device as the port (walking past it would leave the device's branch of
+// the device tree), and serialFound whether it provided the serial number.
+func applyUsbAncestorInfo(details *PortDetails, ancestorID string, childSerial string, isFTDI bool) (sameDevice, serialFound bool) {
 	d := &PortDetails{}
 	parseDeviceID(ancestorID, d)
 	if !d.IsUSB || d.VID != details.VID || d.PID != details.PID {
-		// Left the port's own branch of the device tree; stop searching.
-		return true
+		return false, false
 	}
 	if d.SerialNumber == "" {
 		// An ancestor with a windows-generated instance id (it contains "&",
 		// which parseDeviceID rejects): keep looking further up the tree.
-		return false
+		return true, false
 	}
 	details.SerialNumber = d.SerialNumber
 	if isFTDI {
@@ -82,7 +84,7 @@ func applyUsbAncestorInfo(details *PortDetails, ancestorID string, childSerial s
 			details.UsbChannel = ch
 		}
 	}
-	return true
+	return true, true
 }
 
 // setupapi based
@@ -217,24 +219,33 @@ func retrievePortDetailsFromDevInfo(device *deviceInfo, details *PortDetails, sh
 	// ports always take this path: the FTDI bus driver reports a serial of
 	// its own making (see applyUsbAncestorInfo), buried one level deeper
 	// than a composite port (FTDIBUS child -> USB interface -> USB device).
-	isFTDI := strings.HasPrefix(deviceID, "FTDIBUS")
-	if details.IsUSB && (details.SerialNumber == "" || isFTDI) {
-		childSerial := details.SerialNumber
-		dev := device.data.DevInst
-		for depth := 0; depth < 3; depth++ {
-			parent, err := getParent(dev)
-			if err != nil {
-				break
+	// The highest ancestor still belonging to the device is the USB device
+	// node itself, which carries the physical bus location.
+	if details.IsUSB {
+		isFTDI := strings.HasPrefix(deviceID, "FTDIBUS")
+		usbDev := device.data.DevInst
+		if details.SerialNumber == "" || isFTDI {
+			childSerial := details.SerialNumber
+			for depth := 0; depth < 3; depth++ {
+				parent, err := getParent(usbDev)
+				if err != nil {
+					break
+				}
+				parentID, err := getDeviceID(parent)
+				if err != nil {
+					break
+				}
+				sameDevice, serialFound := applyUsbAncestorInfo(details, parentID, childSerial, isFTDI)
+				if !sameDevice {
+					break
+				}
+				usbDev = parent
+				if serialFound {
+					break
+				}
 			}
-			parentID, err := getDeviceID(parent)
-			if err != nil {
-				break
-			}
-			if applyUsbAncestorInfo(details, parentID, childSerial, isFTDI) {
-				break
-			}
-			dev = parent
 		}
+		details.Location = devInstanceGetLocationPaths(usbDev)
 	}
 
 	/*	spdrpDeviceDesc returns a generic name, e.g.: "CDC-ACM", which will be the same for 2 identical devices attached
@@ -350,6 +361,30 @@ type usbStringDescriptorHeader struct {
 
 // cmDrpDriver is the CM_DRP_DRIVER property code (1-based, unlike SPDRP which is 0-based).
 const cmDrpDriver = 0xA
+
+// cmDrpLocationPaths is the CM_DRP_LOCATION_PATHS property code (1-based,
+// unlike SPDRP which is 0-based).
+const cmDrpLocationPaths = 0x24
+
+// devInstanceGetLocationPaths retrieves the most specific location path of a
+// raw windows.DEVINST, e.g. "PCIROOT(0)#PCI(0x14,0)#USBROOT(0)#USB(2)#USB(3)".
+// The property is a REG_MULTI_SZ; the first string is returned.
+func devInstanceGetLocationPaths(inst windows.DEVINST) string {
+	var size uint32
+	cmGetDevNodeRegistryProperty(inst, cmDrpLocationPaths, nil, nil, &size, 0)
+	if size == 0 {
+		return ""
+	}
+	buf := make([]byte, size)
+	if err := cmConvertError(cmGetDevNodeRegistryProperty(inst, cmDrpLocationPaths, nil, &buf[0], &size, 0)); err != nil {
+		return ""
+	}
+	nChars := size / 2
+	if nChars == 0 {
+		return ""
+	}
+	return windows.UTF16ToString(unsafe.Slice((*uint16)(unsafe.Pointer(&buf[0])), nChars))
+}
 
 // devInstanceGetDriverKey retrieves the SPDRP_DRIVER equivalent for a raw windows.DEVINST
 // using CM_Get_DevNode_Registry_PropertyW.

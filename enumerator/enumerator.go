@@ -21,8 +21,11 @@ type PortDetails struct {
 	PID string
 	// SerialNumber is the USB serial number, when available.
 	SerialNumber string
-	// Location is the USB device tree location, when available. Currently
-	// only populated on macOS.
+	// Location is the USB device tree location, when available. The format
+	// is OS-dependent (IORegistry location on macOS, device location path
+	// like "PCIROOT(0)#PCI(0x14,0)#USBROOT(0)#USB(2)" on Windows) but stable
+	// for a given physical port, and shared by all serial ports of a
+	// multi-port adapter. Currently populated on macOS and Windows.
 	Location string
 	// Configuration is the USB configuration string, when available.
 	// Requires active USB probing enabled.

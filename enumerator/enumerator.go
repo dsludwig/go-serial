@@ -33,6 +33,13 @@ type PortDetails struct {
 	// Product is the USB iProduct string, when available.
 	// Requires active USB probing enabled.
 	Product string
+	// UsbChannel identifies which channel/interface of a multi-port USB
+	// adapter the port belongs to, when the OS exposes it: the channel
+	// letter ("A"/"B") of a multi-channel FTDI adapter, or the composite
+	// interface number ("00", "02", ...) of a multi-function USB device.
+	// Empty when unknown or not applicable. Currently only populated on
+	// Windows.
+	UsbChannel string
 }
 
 // All is a vid/pid filter that accepts all devices

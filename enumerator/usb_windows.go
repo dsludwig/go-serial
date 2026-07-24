@@ -30,6 +30,9 @@ func parseDeviceID(deviceID string, details *PortDetails) {
 		if len(re[0]) >= 4 {
 			details.SerialNumber = re[0][4]
 		}
+		if mi := regexp.MustCompile(`&MI_(\w+)`).FindStringSubmatch(deviceID); mi != nil {
+			details.UsbChannel = mi[1]
+		}
 		return
 	}
 
@@ -50,6 +53,36 @@ func parseDeviceID(deviceID string, details *PortDetails) {
 	}
 
 	// Other unidentified device type
+}
+
+// applyUsbAncestorInfo refines details with information parsed from the
+// device id of a USB ancestor. For FTDI ports the ancestor's serial number
+// is authoritative: the FTDI bus driver appends the channel letter of the
+// adapter to the serial in its child device id
+// (FTDIBUS\VID_0403+PID_6010+<SERIAL>A\0000 for channel A of an FT2232) —
+// and synthesizes an id from the bus location when the EEPROM holds no
+// serial at all. The suffix left after removing the ancestor's serial from
+// childSerial identifies the channel. It reports whether the search up the
+// device tree is complete.
+func applyUsbAncestorInfo(details *PortDetails, ancestorID string, childSerial string, isFTDI bool) bool {
+	d := &PortDetails{}
+	parseDeviceID(ancestorID, d)
+	if !d.IsUSB || d.VID != details.VID || d.PID != details.PID {
+		// Left the port's own branch of the device tree; stop searching.
+		return true
+	}
+	if d.SerialNumber == "" {
+		// An ancestor with a windows-generated instance id (it contains "&",
+		// which parseDeviceID rejects): keep looking further up the tree.
+		return false
+	}
+	details.SerialNumber = d.SerialNumber
+	if isFTDI {
+		if ch := strings.TrimPrefix(childSerial, d.SerialNumber); ch != childSerial {
+			details.UsbChannel = ch
+		}
+	}
+	return true
 }
 
 // setupapi based
@@ -179,17 +212,28 @@ func retrievePortDetailsFromDevInfo(device *deviceInfo, details *PortDetails, sh
 	}
 	parseDeviceID(deviceID, details)
 
-	// On composite USB devices the serial number is usually reported on the parent
-	// device, so let's navigate up one level and see if we can get this information
-	if details.IsUSB && details.SerialNumber == "" {
-		if parentInfo, err := getParent(device.data.DevInst); err == nil {
-			if parentDeviceID, err := getDeviceID(parentInfo); err == nil {
-				d := &PortDetails{}
-				parseDeviceID(parentDeviceID, d)
-				if details.VID == d.VID && details.PID == d.PID {
-					details.SerialNumber = d.SerialNumber
-				}
+	// On composite USB devices the serial number is usually reported on an
+	// ancestor device, so navigate up the device tree until we find it. FTDI
+	// ports always take this path: the FTDI bus driver reports a serial of
+	// its own making (see applyUsbAncestorInfo), buried one level deeper
+	// than a composite port (FTDIBUS child -> USB interface -> USB device).
+	isFTDI := strings.HasPrefix(deviceID, "FTDIBUS")
+	if details.IsUSB && (details.SerialNumber == "" || isFTDI) {
+		childSerial := details.SerialNumber
+		dev := device.data.DevInst
+		for depth := 0; depth < 3; depth++ {
+			parent, err := getParent(dev)
+			if err != nil {
+				break
 			}
+			parentID, err := getDeviceID(parent)
+			if err != nil {
+				break
+			}
+			if applyUsbAncestorInfo(details, parentID, childSerial, isFTDI) {
+				break
+			}
+			dev = parent
 		}
 	}
 
